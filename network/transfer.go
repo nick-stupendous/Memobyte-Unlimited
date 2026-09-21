@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 const uploadPath = "./memobyte_storage"
@@ -300,9 +301,7 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return chunkFiles[i] < chunkFiles[j]
 	})
 
-	w.WriteHeader(http.StatusOK)
-	flusher, canFlush := w.(http.Flusher)
-
+	var fullFileBytes []byte
 	for _, chunk := range chunkFiles {
 		chunkPath := filepath.Join(uploadPath, chunk)
 		data, err := os.ReadFile(chunkPath)
@@ -312,19 +311,18 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 
 		decrypted, err := decryptData(data)
 		if err == nil {
-			w.Write(decrypted)
+			fullFileBytes = append(fullFileBytes, decrypted...)
 		} else {
-			w.Write(data)
-		}
-
-		if canFlush {
-			flusher.Flush()
+			fullFileBytes = append(fullFileBytes, data...)
 		}
 	}
+
+	reader := bytes.NewReader(fullFileBytes)
+	http.ServeContent(w, r, fileName, time.Time{}, reader)
 }
 
 func main() {
-	port := "0.0.0.0:8080" // Bound to all interfaces for local network access
+	port := "0.0.0.0:8080"
 
 	http.HandleFunc("/api/upload", uploadHandler)
 	http.HandleFunc("/api/receive-chunk", receiveChunkHandler)
