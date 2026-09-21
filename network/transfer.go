@@ -300,6 +300,9 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return chunkFiles[i] < chunkFiles[j]
 	})
 
+	w.WriteHeader(http.StatusOK)
+	flusher, canFlush := w.(http.Flusher)
+
 	for _, chunk := range chunkFiles {
 		chunkPath := filepath.Join(uploadPath, chunk)
 		data, err := os.ReadFile(chunkPath)
@@ -312,6 +315,10 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 			w.Write(decrypted)
 		} else {
 			w.Write(data)
+		}
+
+		if canFlush {
+			flusher.Flush()
 		}
 	}
 }
