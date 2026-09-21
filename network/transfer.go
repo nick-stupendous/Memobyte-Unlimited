@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 const uploadPath = "./memobyte_storage"
@@ -317,7 +316,8 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Explicitly set correct audio/video MIME types so browsers handle range streaming properly
+	fileSize := int64(len(fullFileBytes))
+
 	ext := strings.ToLower(filepath.Ext(fileName))
 	switch ext {
 	case ".flac":
@@ -332,10 +332,47 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp4")
 	case ".webm":
 		w.Header().Set("Content-Type", "video/webm")
+	default:
+		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 
-	reader := bytes.NewReader(fullFileBytes)
-	http.ServeContent(w, r, fileName, time.Time{}, reader)
+	w.Header().Set("Accept-Ranges", "bytes")
+
+	rangeHeader := r.Header.Get("Range")
+	if rangeHeader == "" {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", fileSize))
+		w.WriteHeader(http.StatusOK)
+		w.Write(fullFileBytes)
+		return
+	}
+
+	var start, end int64
+	_, err = fmt.Sscanf(rangeHeader, "bytes=%d-%d", &start, &end)
+	if err != nil {
+		_, err = fmt.Sscanf(rangeHeader, "bytes=%d-", &start)
+		if err != nil {
+			http.Error(w, "Invalid range", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		end = fileSize - 1
+	}
+
+	if start >= fileSize {
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
+		http.Error(w, "Range out of bounds", http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
+
+	if end >= fileSize {
+		end = fileSize - 1
+	}
+
+	chunkLength := (end - start) + 1
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", chunkLength))
+	w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
+	w.WriteHeader(http.StatusPartialContent)
+
+	w.Write(fullFileBytes[start : end+1])
 }
 
 func main() {
