@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Memobyte-Unlimited | Ceph-Inspired Exabyte Cloud</title>
+    <title>Memobyte-Unlimited | FOSS Exabyte Cloud</title>
     <style>
         :root { bg: #0f172a; card-bg: #1e293b; accent: #38bdf8; text: #f8fafc; border: #334155; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; }
@@ -68,7 +68,7 @@
         </div>
 
         <div class="card">
-            <h3>Distributed Object Pool (Ceph-Style Explorer)</h3>
+            <h3>Distributed Object Pool (File Explorer)</h3>
             <table>
                 <thead>
                     <tr>
@@ -82,7 +82,6 @@
     </div>
 </div>
 
-<!-- File View / Preview Modal -->
 <div class="modal-overlay" id="previewModal">
     <div class="modal-content">
         <button class="close-btn" onclick="closeModal('previewModal')">Close</button>
@@ -91,11 +90,10 @@
     </div>
 </div>
 
-<!-- Ceph Object Map Inspector Modal -->
 <div class="modal-overlay" id="inspectModal">
     <div class="modal-content">
         <button class="close-btn" onclick="closeModal('inspectModal')">Close</button>
-        <h3 style="margin-top: 0;">RADOS Object Inspector</h3>
+        <h3 style="margin-top: 0;">Memobyte Object Inspector</h3>
         <div id="inspectorBody" style="margin-top: 1rem; font-size: 0.9rem; color: #cbd5e1;"></div>
     </div>
 </div>
@@ -175,7 +173,7 @@
             <p><b>Object Key:</b> ${data.filename}</p>
             <p><b>Encryption Status:</b> AES-256-GCM Secure</p>
             <p><b>Total Chunks (Shards):</b> ${data.total_chunks}</p>
-            <h4 style="margin-top: 1rem;">Placement Group Shard Map:</h4>
+            <h4 style="margin-top: 1rem;">Shard Placement Map:</h4>
             <table>
                 <thead><tr><th>Shard Name</th><th>Assigned Node</th><th>Size</th></tr></thead>
                 <tbody>${chunksHtml}</tbody>
