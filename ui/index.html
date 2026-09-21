@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Memobyte-Unlimited | FOSS Storage Exabyte Cloud</title>
+    <title>Memobyte-Unlimited | Ceph-Inspired Exabyte Cloud</title>
     <style>
         :root { bg: #0f172a; card-bg: #1e293b; accent: #38bdf8; text: #f8fafc; border: #334155; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; }
@@ -24,9 +24,9 @@
         a { color: #38bdf8; text-decoration: none; cursor: pointer; }
         .action-links { display: flex; gap: 0.75rem; }
         
-        /* Unique Object Inspector Modal */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.8); display: none; justify-content: center; align-items: center; z-index: 100; }
-        .modal-content { background: #1e293b; border: 1px solid #334155; padding: 2rem; border-radius: 8px; width: 600px; max-height: 80vh; overflow-y: auto; }
+        /* Modals */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); display: none; justify-content: center; align-items: center; z-index: 100; }
+        .modal-content { background: #1e293b; border: 1px solid #334155; padding: 2rem; border-radius: 8px; width: 700px; max-height: 85vh; overflow-y: auto; }
         .close-btn { float: right; background: #334155; border: none; color: white; padding: 0.3rem 0.6rem; border-radius: 4px; cursor: pointer; }
     </style>
 </head>
@@ -82,11 +82,20 @@
     </div>
 </div>
 
+<!-- File View / Preview Modal -->
+<div class="modal-overlay" id="previewModal">
+    <div class="modal-content">
+        <button class="close-btn" onclick="closeModal('previewModal')">Close</button>
+        <h3 id="previewTitle" style="margin-top: 0; color: #38bdf8;">File Preview</h3>
+        <div id="previewBody" style="margin-top: 1rem;"></div>
+    </div>
+</div>
+
 <!-- Ceph Object Map Inspector Modal -->
 <div class="modal-overlay" id="inspectModal">
     <div class="modal-content">
-        <button class="close-btn" onclick="closeInspector()">Close</button>
-        <h3>RADOS Object Inspector</h3>
+        <button class="close-btn" onclick="closeModal('inspectModal')">Close</button>
+        <h3 style="margin-top: 0;">RADOS Object Inspector</h3>
         <div id="inspectorBody" style="margin-top: 1rem; font-size: 0.9rem; color: #cbd5e1;"></div>
     </div>
 </div>
@@ -113,14 +122,44 @@
                     <td>📦 ${f}</td>
                     <td>
                         <div class="action-links">
-                            <a href="/files/${f}" target="_blank">View</a>
+                            <a onclick="viewObject('${f}')">View</a>
                             <a onclick="inspectObject('${f}')">Inspect Map</a>
+                            <a href="/files/${f}" download style="color: #34d399;">Download</a>
                             <a onclick="deleteFile('${f}')" style="color: #f43f5e;">Delete</a>
                         </div>
                     </td>
                 </tr>
             `;
         });
+    }
+
+    async function viewObject(fileName) {
+        document.getElementById('previewTitle').innerText = `Viewing: ${fileName}`;
+        const body = document.getElementById('previewBody');
+        body.innerHTML = '<p style="color: #94a3b8;">Assembling and decrypting chunks from cluster...</p>';
+        document.getElementById('previewModal').style.display = 'flex';
+
+        try {
+            const res = await fetch(`/files/${fileName}`);
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const ext = fileName.split('.').pop().toLowerCase();
+
+            if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
+                body.innerHTML = `<img src="${url}" style="max-width: 100%; max-height: 70vh; display: block; margin: 0 auto; border-radius: 4px;">`;
+            } else if (['mp4', 'webm', 'ogg'].includes(ext)) {
+                body.innerHTML = `<video controls autoplay src="${url}" style="width: 100%; max-height: 70vh; border-radius: 4px;"></video>`;
+            } else if (['mp3', 'wav', 'ogg'].includes(ext)) {
+                body.innerHTML = `<audio controls autoplay src="${url}" style="width: 100%; margin-top: 1rem;"></audio>`;
+            } else if (ext === 'pdf') {
+                body.innerHTML = `<iframe src="${url}" style="width: 100%; height: 70vh; border: none; border-radius: 4px;"></iframe>`;
+            } else {
+                const text = await blob.text();
+                body.innerHTML = `<pre style="background: #0b0f19; padding: 1rem; border-radius: 6px; overflow-x: auto; max-height: 70vh; color: #38bdf8; font-family: monospace; font-size: 0.85rem;"><code>${escapeHtml(text)}</code></pre>`;
+            }
+        } catch (err) {
+            body.innerHTML = `<p style="color: #f43f5e;">Error rendering preview for ${fileName}</p>`;
+        }
     }
 
     async function inspectObject(fileName) {
@@ -145,8 +184,12 @@
         document.getElementById('inspectModal').style.display = 'flex';
     }
 
-    function closeInspector() {
-        document.getElementById('inspectModal').style.display = 'none';
+    function closeModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
     async function deleteFile(fileName) {
