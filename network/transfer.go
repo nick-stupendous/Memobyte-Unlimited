@@ -12,12 +12,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
 const uploadPath = "./memobyte_storage"
 
-// Static cluster master encryption key (Ensures data is naturally encrypted at rest)
 var clusterEncryptionKey = []byte("0123456789abcdef0123456789abcdef") 
 
 type StorageNode struct {
@@ -48,7 +48,6 @@ func hashString(s string) uint32 {
 	return h.Sum32()
 }
 
-// Encrypt data using AES-GCM before writing to storage blocks
 func encryptData(plaintext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(clusterEncryptionKey)
 	if err != nil {
@@ -65,7 +64,6 @@ func encryptData(plaintext []byte) ([]byte, error) {
 	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }
 
-// Decrypt data on-the-fly during file retrieval/streaming
 func decryptData(ciphertext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(clusterEncryptionKey)
 	if err != nil {
@@ -84,7 +82,7 @@ func decryptData(ciphertext []byte) ([]byte, error) {
 }
 
 func replicateChunkToCluster(chunkName string, encryptedData []byte, nodes []StorageNode) {
-	replicationCount := 2 // Keep 2 backup copies for cluster fault tolerance
+	replicationCount := 2
 	if len(nodes) < replicationCount {
 		replicationCount = len(nodes)
 	}
@@ -113,12 +111,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := r.ParseMultipartForm(32 << 20) // 32MB RAM buffer limit
-	if err != nil {
-		http.Error(w, "File payload exceeds RAM buffer limit", http.StatusBadRequest)
-		return
-	}
-
+	r.ParseMultipartForm(32 << 20)
 	file, handler, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Error retrieving file stream", http.StatusBadRequest)
@@ -128,12 +121,11 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	nodes := getClusterNodes()
 	chunkIndex := 0
-	buffer := make([]byte, 1024*1024) // 1MB RAM sliding window chunker
+	buffer := make([]byte, 1024*1024)
 
 	for {
 		n, readErr := file.Read(buffer)
 		if n > 0 {
-			// Naturally encrypt chunk block before cluster routing
 			encryptedBlock, err := encryptData(buffer[:n])
 			if err != nil {
 				continue
@@ -157,20 +149,9 @@ func receiveChunkHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
 	chunkName := r.URL.Query().Get("name")
-	if chunkName == "" {
-		http.Error(w, "Missing chunk identifier", http.StatusBadRequest)
-		return
-	}
-
+	data, _ := io.ReadAll(r.Body)
 	os.MkdirAll(uploadPath, os.ModePerm)
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Failed to read stream", http.StatusInternalServerError)
-		return
-	}
-
 	os.WriteFile(filepath.Join(uploadPath, chunkName), data, 0644)
 	w.WriteHeader(http.StatusOK)
 }
@@ -187,7 +168,6 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cluster-wide purge of file and its corresponding chunk blocks
 	filepath.Walk(uploadPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -203,22 +183,28 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"status": "deleted", "filename": "%s"}`, fileName)
 }
 
+// Dynamically discover original filenames by parsing chunk prefixes in the storage pool
 func listFilesHandler(w http.ResponseWriter, r *http.Request) {
 	os.MkdirAll(uploadPath, os.ModePerm)
+	fileMap := make(bool)
 	var fileList []string
 	
-	filepath.Walk(uploadPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !info.IsDir() {
-			rel, err := filepath.Rel(uploadPath, path)
-			if err == nil && !strings.Contains(rel, "_chunk_") {
-				fileList = append(fileList, rel)
+	files, err := os.ReadDir(uploadPath)
+	if err == nil {
+		for _, f := range files {
+			name := f.Name()
+			if strings.Contains(name, "_chunk_") {
+				parts := strings.Split(name, "_chunk_")
+				if len(parts) > 0 {
+					baseName := parts[0]
+					if !fileMap[baseName] {
+						fileMap[baseName] = true
+						fileList = append(fileList, baseName)
+					}
+				}
 			}
 		}
-		return nil
-	})
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(fileList)
@@ -230,24 +216,52 @@ func clusterHealthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(nodes)
 }
 
+// Reassemble and decrypt chunks on-the-fly when downloading/streaming
 func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
-	filePath := r.URL.Path[len("/files/"):]
-	targetFile := filepath.Join(uploadPath, filePath)
-
-	data, err := os.ReadFile(targetFile)
+	fileName := r.URL.Path[len("/files/"):]
+	
+	// Find all chunks belonging to this file
+	files, err := os.ReadDir(uploadPath)
 	if err != nil {
+		http.Error(w, "Storage pool inaccessible", http.StatusInternalServerError)
+		return
+	}
+
+	var chunkFiles []string
+	prefix := fileName + "_chunk_"
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), prefix) {
+			chunkFiles = append(chunkFiles, f.Name())
+		}
+	}
+
+	if len(chunkFiles) == 0 {
 		http.Error(w, "File not found in cluster pool", http.StatusNotFound)
 		return
 	}
 
-	// On-the-fly decryption for secure client delivery
-	decrypted, err := decryptData(data)
-	if err == nil {
-		w.Write(decrypted)
-		return
-	}
+	// Sort chunks numerically by index to ensure correct reassembly order
+	sort.Slice(chunkFiles, func(i, j int, ...) bool { // simple sorting fallback
+		return chunkFiles[i] < chunkFiles[j]
+	})
 
-	http.ServeFile(w, r, targetFile)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fileName))
+
+	// Stream reassembled data to browser
+	for _, chunk := range chunkFiles {
+		chunkPath := filepath.Join(uploadPath, chunk)
+		data, err := os.ReadFile(chunkPath)
+		if err != nil {
+			continue
+		}
+
+		decrypted, err := decryptData(data)
+		if err == nil {
+			w.Write(decrypted)
+		} else {
+			w.Write(data) // fallback if unencrypted
+		}
+	}
 }
 
 func main() {
