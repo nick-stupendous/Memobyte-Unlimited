@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -16,8 +17,8 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse multipart form data from the web dashboard
-	r.ParseMultipartForm(10 << 30) // 10GB max limit per request
+	// Parse multipart form data from the web dashboard (10GB limit)
+	r.ParseMultipartForm(10 << 30) 
 	file, handler, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Error retrieving file", http.StatusBadRequest)
@@ -25,7 +26,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Create target storage path
+	// Ensure storage directory exists
 	os.MkdirAll(uploadPath, os.ModePerm)
 	dstPath := filepath.Join(uploadPath, handler.Filename)
 	
@@ -36,18 +37,29 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer dst.Close()
 
+	// Copy uploaded bytes to disk
 	_, err = io.Copy(dst, file)
 	if err != nil {
 		http.Error(w, "Error writing file bytes", http.StatusInternalServerError)
 		return
 	}
 
+	// === C++ ENGINE HANDOFF POINT ===
+	// Trigger your C++ core engine to slice this file into chunks
+	cmd := exec.Command("./core/engine_app", dstPath)
+	err = cmd.Run()
+	if err != nil {
+		fmt.Printf("[!] Warning: C++ chunking engine handoff failed: %v\n", err)
+	} else {
+		fmt.Printf("[*] C++ Engine successfully chunked: %s\n", handler.Filename)
+	}
+	// ================================
+
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"status": "success", "filename": "%s", "share_link": "http://localhost:8080/files/%s"}`, handler.Filename, handler.Filename)
 }
 
 func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
-	// Stream file back dynamically for cloud playback/download
 	fileName := r.URL.Path[len("/files/"):]
 	targetFile := filepath.Join(uploadPath, fileName)
 
@@ -65,7 +77,7 @@ func main() {
 	http.HandleFunc("/api/upload", uploadHandler)
 	http.HandleFunc("/files/", fileDownloadHandler)
 	
-	// Serve static frontend UI folder
+	// Serve the static frontend UI folder
 	fs := http.FileServer(http.Dir("./ui"))
 	http.Handle("/", fs)
 
