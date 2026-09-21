@@ -3,78 +3,170 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Memobyte-Unlimited | Cloud Dashboard</title>
+    <title>Memobyte-Unlimited | The FOSS Cloud</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: #1e293b; padding: 2rem; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); width: 400px; text-align: center; }
-        .dropzone { border: 2px dashed #38bdf8; padding: 2rem; border-radius: 8px; cursor: pointer; transition: background 0.2s; margin-top: 1rem; }
-        .dropzone:hover { background: #334155; }
-        input[type="file"] { display: none; }
-        .btn { background: #0ea5e9; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 1rem; width: 100%; }
+        :root { bg: #0f172a; card-bg: #1e293b; accent: #38bdf8; text: #f8fafc; border: #334155; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 1rem; margin-bottom: 2rem; }
+        .toolbar { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+        .btn { background: #0ea5e9; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
         .btn:hover { background: #0284c7; }
-        #result { margin-top: 1.5rem; font-size: 0.9rem; word-break: break-all; text-align: left; }
+        .btn-secondary { background: #334155; }
+        .btn-secondary:hover { background: #475569; }
+        .grid { display: grid; grid-template-columns: 1fr 2fr; gap: 2rem; }
+        .card { background: #1e293b; padding: 1.5rem; border-radius: 8px; border: 1px solid #334155; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #334155; font-size: 0.9rem; }
+        th { color: #94a3b8; }
+        .progress-container { background: #334155; border-radius: 4px; height: 8px; width: 100%; margin-top: 1rem; overflow: hidden; display: none; }
+        .progress-bar { background: #38bdf8; height: 100%; width: 0%; transition: width 0.1s; }
+        input[type="file"], input[type="text"], textarea { display: none; }
+        .modal { background: #1e293b; border: 1px solid #334155; padding: 1rem; border-radius: 8px; margin-top: 1rem; display: none; }
+        .modal input, .modal textarea { display: block; width: 100%; margin-bottom: 0.75rem; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; }
         a { color: #38bdf8; text-decoration: none; }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <h2>Memobyte-Unlimited</h2>
-    <p>FOSS Exabyte Cloud Storage</p>
-    
-    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
-        <p>Drag & drop files here, or <span style="color: #38bdf8;">browse</span></p>
-        <input type="file" id="fileInput">
+<div class="container">
+    <header>
+        <h2>Memobyte-Unlimited</h2>
+        <span>Status: <b style="color: #4ade80;">Exabyte Cluster Online</b></span>
+    </header>
+
+    <div class="toolbar">
+        <button class="btn" onclick="document.getElementById('fileInput').click()">Upload Files</button>
+        <button class="btn" onclick="document.getElementById('folderInput').click()">Upload Folder</button>
+        <button class="btn btn-secondary" onclick="toggleNewDocModal()">+ New Document</button>
+        
+        <input type="file" id="fileInput" multiple onchange="uploadFiles(this.files)">
+        <input type="file" id="folderInput" webkitdirectory directory multiple onchange="uploadFiles(this.files)">
     </div>
 
-    <button class="btn" id="uploadBtn">Upload to Cloud</button>
+    <!-- New Document Creator Modal -->
+    <div class="modal" id="docModal">
+        <h3>Create New Cloud Document</h3>
+        <input type="text" id="docName" placeholder="Document Name (e.g., notes.txt)">
+        <textarea id="docContent" rows="4" placeholder="Type your document content here..."></textarea>
+        <button class="btn" onclick="createDocument()">Save to Cluster</button>
+    </div>
 
-    <div id="result"></div>
+    <div class="grid">
+        <div class="card">
+            <h3>Upload Queue</h3>
+            <div id="statusText" style="color: #94a3b8; font-size: 0.9rem; margin-top: 0.5rem;">Ready for transfers.</div>
+            <div class="progress-container" id="progContainer">
+                <div class="progress-bar" id="progBar"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Cloud Storage Explorer</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name / Path</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="fileTable">
+                    <!-- Populated dynamically -->
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <script>
-    const fileInput = document.getElementById('fileInput');
-    const uploadBtn = document.getElementById('uploadBtn');
-    const resultDiv = document.getElementById('result');
-    
-    let selectedFile = null;
+    function toggleNewDocModal() {
+        const modal = document.getElementById('docModal');
+        modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
+    }
 
-    fileInput.addEventListener('change', (e) => {
-        selectedFile = e.target.files[0];
-        resultDiv.innerHTML = `<b>Selected:</b> ${selectedFile.name}`;
-    });
+    async function fetchFiles() {
+        try {
+            const res = await fetch('/api/files');
+            const files = await res.json();
+            const table = document.getElementById('fileTable');
+            table.innerHTML = '';
+            files.forEach(f => {
+                table.innerHTML += `
+                    <tr>
+                        <td>${f}</td>
+                        <td><a href="/files/${f}" target="_blank">Download / View</a></td>
+                    </tr>
+                `;
+            });
+        } catch (e) {
+            console.error("Error fetching cluster file tree");
+        }
+    }
 
-    uploadBtn.addEventListener('click', async () => {
-        if (!selectedFile) {
-            alert('Please select a file first.');
+    async function uploadFiles(files) {
+        if (!files.length) return;
+        const progContainer = document.getElementById('progContainer');
+        const progBar = document.getElementById('progBar');
+        const statusText = document.getElementById('statusText');
+        
+        progContainer.style.display = 'block';
+
+        for (let i = 0; i < files.length; i++) {
+            let file = files[i];
+            // webkitRelativePath preserves folder trees if uploading a folder
+            let relativePath = file.webkitRelativePath || file.name;
+
+            statusText.innerText = `Uploading (${i+1}/${files.length}): ${relativePath}`;
+
+            const formData = new FormData();
+            formData.append('file', file, relativePath);
+
+            await new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        let percent = (e.loaded / e.total) * 100;
+                        progBar.style.width = percent + '%';
+                    }
+                };
+                xhr.onload = () => { if (xhr.status === 200) resolve(); else reject(); };
+                xhr.open('POST', '/api/upload', true);
+                xhr.send(formData);
+            });
+        }
+
+        statusText.innerText = "[✓] Batch upload complete. Indexed into cluster.";
+        progBar.style.width = '0%';
+        progContainer.style.display = 'none';
+        fetchFiles();
+    }
+
+    async function createDocument() {
+        const name = document.getElementById('docName').value.trim();
+        const content = document.getElementById('docContent').value;
+
+        if (!name) {
+            alert('Please provide a file name.');
             return;
         }
 
-        const formData = new FormData();
-        formData.append('file', selectedFile);
+        const res = await fetch('/api/create-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: name, content: content })
+        });
 
-        resultDiv.innerHTML = "[*] Uploading to Memobyte cluster...";
-
-        try {
-            const response = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await response.json();
-            if (response.ok) {
-                resultDiv.innerHTML = `
-                    [✓] Upload Complete!<br>
-                    <b>File:</b> ${data.filename}<br>
-                    <b>Share Link:</b> <a href="${data.share_link}" target="_blank">${data.share_link}</a>
-                `;
-            } else {
-                resultDiv.innerHTML = `[!] Upload failed.`;
-            }
-        } catch (err) {
-            resultDiv.innerHTML = `[!] Network error connecting to cluster node.`;
+        if (res.ok) {
+            document.getElementById('docName').value = '';
+            document.getElementById('docContent').value = '';
+            toggleNewDocModal();
+            fetchFiles();
+        } else {
+            alert('Failed to create document.');
         }
-    });
+    }
+
+    fetchFiles();
 </script>
 
 </body>
