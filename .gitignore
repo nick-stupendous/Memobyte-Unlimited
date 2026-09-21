@@ -1,0 +1,14 @@
+# Ignore compiled C++ binaries
+core/*.o
+core/build/
+
+# Ignore Go binaries
+network/transfer
+
+# Ignore local user storage vaults and databases
+memobyte_storage/
+*.db
+*.log
+
+# Ignore node modules if using JS tooling
+node_modules/
