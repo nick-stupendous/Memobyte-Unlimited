@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memobyte-Unlimited | Cloud Dashboard</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #1e293b; padding: 2rem; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); width: 400px; text-align: center; }
+        .dropzone { border: 2px dashed #38bdf8; padding: 2rem; border-radius: 8px; cursor: pointer; transition: background 0.2s; margin-top: 1rem; }
+        .dropzone:hover { background: #334155; }
+        input[type="file"] { display: none; }
+        .btn { background: #0ea5e9; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 1rem; width: 100%; }
+        .btn:hover { background: #0284c7; }
+        #result { margin-top: 1.5rem; font-size: 0.9rem; word-break: break-all; text-align: left; }
+        a { color: #38bdf8; text-decoration: none; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Memobyte-Unlimited</h2>
+    <p>FOSS Exabyte Cloud Storage</p>
+    
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+        <p>Drag & drop files here, or <span style="color: #38bdf8;">browse</span></p>
+        <input type="file" id="fileInput">
+    </div>
+
+    <button class="btn" id="uploadBtn">Upload to Cloud</button>
+
+    <div id="result"></div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const resultDiv = document.getElementById('result');
+    
+    let selectedFile = null;
+
+    fileInput.addEventListener('change', (e) => {
+        selectedFile = e.target.files[0];
+        resultDiv.innerHTML = `<b>Selected:</b> ${selectedFile.name}`;
+    });
+
+    uploadBtn.addEventListener('click', async () => {
+        if (!selectedFile) {
+            alert('Please select a file first.');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        resultDiv.innerHTML = "[*] Uploading to Memobyte cluster...";
+
+        try {
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                resultDiv.innerHTML = `
+                    [✓] Upload Complete!<br>
+                    <b>File:</b> ${data.filename}<br>
+                    <b>Share Link:</b> <a href="${data.share_link}" target="_blank">${data.share_link}</a>
+                `;
+            } else {
+                resultDiv.innerHTML = `[!] Upload failed.`;
+            }
+        } catch (err) {
+            resultDiv.innerHTML = `[!] Network error connecting to cluster node.`;
+        }
+    });
+</script>
+
+</body>
+</html>
