@@ -26,8 +26,10 @@
         
         /* Modals */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); display: none; justify-content: center; align-items: center; z-index: 100; }
-        .modal-content { background: #1e293b; border: 1px solid #334155; padding: 2rem; border-radius: 8px; width: 700px; max-height: 85vh; overflow-y: auto; }
-        .close-btn { float: right; background: #334155; border: none; color: white; padding: 0.3rem 0.6rem; border-radius: 4px; cursor: pointer; }
+        .modal-content { background: #1e293b; border: 1px solid #334155; padding: 2rem; border-radius: 8px; width: 700px; max-height: 85vh; overflow-y: auto; position: relative; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .close-btn { background: #334155; border: none; color: white; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .close-btn:hover { background: #475569; }
     </style>
 </head>
 <body>
@@ -82,23 +84,31 @@
     </div>
 </div>
 
+<!-- File View / Preview Modal -->
 <div class="modal-overlay" id="previewModal">
     <div class="modal-content">
-        <button class="close-btn" onclick="closeModal('previewModal')">Close</button>
-        <h3 id="previewTitle" style="margin-top: 0; color: #38bdf8;">File Preview</h3>
+        <div class="modal-header">
+            <h3 id="previewTitle" style="margin: 0; color: #38bdf8;">File Preview</h3>
+            <button class="close-btn" onclick="closeModal('previewModal')">Close</button>
+        </div>
         <div id="previewBody" style="margin-top: 1rem;"></div>
     </div>
 </div>
 
+<!-- Object Map Inspector Modal -->
 <div class="modal-overlay" id="inspectModal">
     <div class="modal-content">
-        <button class="close-btn" onclick="closeModal('inspectModal')">Close</button>
-        <h3 style="margin-top: 0;">Memobyte Object Inspector</h3>
+        <div class="modal-header">
+            <h3 style="margin: 0;">Memobyte Object Inspector</h3>
+            <button class="close-btn" onclick="closeModal('inspectModal')">Close</button>
+        </div>
         <div id="inspectorBody" style="margin-top: 1rem; font-size: 0.9rem; color: #cbd5e1;"></div>
     </div>
 </div>
 
 <script>
+    let activeController = null;
+
     async function fetchClusterHealth() {
         const res = await fetch('/api/health');
         const nodes = await res.json();
@@ -137,8 +147,12 @@
         body.innerHTML = '<p style="color: #94a3b8;">Assembling and decrypting chunks from cluster...</p>';
         document.getElementById('previewModal').style.display = 'flex';
 
+        // Abort any prior running request
+        if (activeController) activeController.abort();
+        activeController = new AbortController();
+
         try {
-            const res = await fetch(`/files/${fileName}`);
+            const res = await fetch(`/files/${fileName}`, { signal: activeController.signal });
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
             const ext = fileName.split('.').pop().toLowerCase();
@@ -147,7 +161,7 @@
                 body.innerHTML = `<img src="${url}" style="max-width: 100%; max-height: 70vh; display: block; margin: 0 auto; border-radius: 4px;">`;
             } else if (['mp4', 'webm', 'ogg'].includes(ext)) {
                 body.innerHTML = `<video controls autoplay src="${url}" style="width: 100%; max-height: 70vh; border-radius: 4px;"></video>`;
-            } else if (['mp3', 'wav', 'ogg'].includes(ext)) {
+            } else if (['mp3', 'wav', 'flac', 'aac'].includes(ext)) {
                 body.innerHTML = `<audio controls autoplay src="${url}" style="width: 100%; margin-top: 1rem;"></audio>`;
             } else if (ext === 'pdf') {
                 body.innerHTML = `<iframe src="${url}" style="width: 100%; height: 70vh; border: none; border-radius: 4px;"></iframe>`;
@@ -156,7 +170,9 @@
                 body.innerHTML = `<pre style="background: #0b0f19; padding: 1rem; border-radius: 6px; overflow-x: auto; max-height: 70vh; color: #38bdf8; font-family: monospace; font-size: 0.85rem;"><code>${escapeHtml(text)}</code></pre>`;
             }
         } catch (err) {
-            body.innerHTML = `<p style="color: #f43f5e;">Error rendering preview for ${fileName}</p>`;
+            if (err.name !== 'AbortError') {
+                body.innerHTML = `<p style="color: #f43f5e;">Error rendering preview for ${fileName}</p>`;
+            }
         }
     }
 
@@ -183,6 +199,10 @@
     }
 
     function closeModal(modalId) {
+        if (activeController) {
+            activeController.abort(); // Immediately cancels hanging stream requests
+            activeController = null;
+        }
         document.getElementById(modalId).style.display = 'none';
     }
 
