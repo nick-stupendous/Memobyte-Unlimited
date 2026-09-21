@@ -183,10 +183,9 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"status": "deleted", "filename": "%s"}`, fileName)
 }
 
-// Dynamically discover original filenames by parsing chunk prefixes in the storage pool
 func listFilesHandler(w http.ResponseWriter, r *http.Request) {
 	os.MkdirAll(uploadPath, os.ModePerm)
-	fileMap := make(bool)
+	fileMap := make(map[string]bool)
 	var fileList []string
 	
 	files, err := os.ReadDir(uploadPath)
@@ -216,11 +215,9 @@ func clusterHealthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(nodes)
 }
 
-// Reassemble and decrypt chunks on-the-fly when downloading/streaming
 func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 	fileName := r.URL.Path[len("/files/"):]
 	
-	// Find all chunks belonging to this file
 	files, err := os.ReadDir(uploadPath)
 	if err != nil {
 		http.Error(w, "Storage pool inaccessible", http.StatusInternalServerError)
@@ -240,14 +237,12 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sort chunks numerically by index to ensure correct reassembly order
-	sort.Slice(chunkFiles, func(i, j int, ...) bool { // simple sorting fallback
+	sort.Slice(chunkFiles, func(i, j int) bool {
 		return chunkFiles[i] < chunkFiles[j]
 	})
 
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fileName))
 
-	// Stream reassembled data to browser
 	for _, chunk := range chunkFiles {
 		chunkPath := filepath.Join(uploadPath, chunk)
 		data, err := os.ReadFile(chunkPath)
@@ -259,7 +254,7 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			w.Write(decrypted)
 		} else {
-			w.Write(data) // fallback if unencrypted
+			w.Write(data)
 		}
 	}
 }
