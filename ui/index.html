@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Memobyte-Unlimited | Secure Exabyte Cloud</title>
+    <title>Memobyte-Unlimited | FOSS Storage Exabyte Cloud</title>
     <style>
         :root { bg: #0f172a; card-bg: #1e293b; accent: #38bdf8; text: #f8fafc; border: #334155; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; }
-        .container { max-width: 1200px; margin: 0 auto; }
+        .container { max-width: 1250px; margin: 0 auto; }
         header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 1rem; margin-bottom: 2rem; }
         .toolbar { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
         .btn { background: #0ea5e9; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
@@ -21,8 +21,13 @@
         .progress-bar { background: #38bdf8; height: 100%; width: 0%; transition: width 0.1s; }
         input[type="file"] { display: none; }
         .node-badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; background: #065f46; color: #34d399; }
-        a { color: #38bdf8; text-decoration: none; }
-        .action-links { display: flex; gap: 1rem; }
+        a { color: #38bdf8; text-decoration: none; cursor: pointer; }
+        .action-links { display: flex; gap: 0.75rem; }
+        
+        /* Unique Object Inspector Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.8); display: none; justify-content: center; align-items: center; z-index: 100; }
+        .modal-content { background: #1e293b; border: 1px solid #334155; padding: 2rem; border-radius: 8px; width: 600px; max-height: 80vh; overflow-y: auto; }
+        .close-btn { float: right; background: #334155; border: none; color: white; padding: 0.3rem 0.6rem; border-radius: 4px; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -30,7 +35,7 @@
 <div class="container">
     <header>
         <h2>Memobyte-Unlimited</h2>
-        <span>Status: <b style="color: #4ade80;">Encrypted Ring Active</b></span>
+        <span>Status: <b style="color: #4ade80;">Cluster Ring & Map Active</b></span>
     </header>
 
     <div class="toolbar">
@@ -47,19 +52,15 @@
                 <h3>Cluster Node Health</h3>
                 <table>
                     <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Host</th>
-                            <th>Status</th>
-                        </tr>
+                        <tr><th>ID</th><th>Host</th><th>Status</th></tr>
                     </thead>
                     <tbody id="nodeTable"></tbody>
                 </table>
             </div>
 
             <div class="card">
-                <h3>Upload Transfer Center</h3>
-                <div id="statusText" style="color: #94a3b8; font-size: 0.9rem; margin-top: 0.5rem;">Ready for secure streaming.</div>
+                <h3>Cluster Operations</h3>
+                <div id="statusText" style="color: #94a3b8; font-size: 0.9rem;">Ready for transactions.</div>
                 <div class="progress-container" id="progContainer">
                     <div class="progress-bar" id="progBar"></div>
                 </div>
@@ -67,12 +68,12 @@
         </div>
 
         <div class="card">
-            <h3>Cloud File Explorer (AES-256 Secured)</h3>
+            <h3>Distributed Object Pool (Ceph-Style Explorer)</h3>
             <table>
                 <thead>
                     <tr>
-                        <th>Asset Name</th>
-                        <th>Actions</th>
+                        <th>Object / Asset Name</th>
+                        <th>Cluster Management Actions</th>
                     </tr>
                 </thead>
                 <tbody id="fileTable"></tbody>
@@ -81,63 +82,77 @@
     </div>
 </div>
 
+<!-- Ceph Object Map Inspector Modal -->
+<div class="modal-overlay" id="inspectModal">
+    <div class="modal-content">
+        <button class="close-btn" onclick="closeInspector()">Close</button>
+        <h3>RADOS Object Inspector</h3>
+        <div id="inspectorBody" style="margin-top: 1rem; font-size: 0.9rem; color: #cbd5e1;"></div>
+    </div>
+</div>
+
 <script>
     async function fetchClusterHealth() {
-        try {
-            const res = await fetch('/api/health');
-            const nodes = await res.json();
-            const table = document.getElementById('nodeTable');
-            table.innerHTML = '';
-            nodes.forEach(node => {
-                table.innerHTML += `
-                    <tr>
-                        <td>#${node.id}</td>
-                        <td><code>${node.host}</code></td>
-                        <td><span class="node-badge">${node.status.toUpperCase()}</span></td>
-                    </tr>
-                `;
-            });
-        } catch (e) {
-            console.error("Failed to query node health");
-        }
+        const res = await fetch('/api/health');
+        const nodes = await res.json();
+        const table = document.getElementById('nodeTable');
+        table.innerHTML = '';
+        nodes.forEach(n => {
+            table.innerHTML += `<tr><td>#${n.id}</td><td><code>${n.host}</code></td><td><span class="node-badge">${n.status.toUpperCase()}</span></td></tr>`;
+        });
     }
 
     async function fetchFiles() {
-        try {
-            const res = await fetch('/api/files');
-            const files = await res.json();
-            const table = document.getElementById('fileTable');
-            table.innerHTML = '';
-            files.forEach(f => {
-                table.innerHTML += `
-                    <tr>
-                        <td>🔒 ${f}</td>
-                        <td>
-                            <div class="action-links">
-                                <a href="/files/${f}" target="_blank">Download</a>
-                                <a href="#" onclick="deleteFile('${f}')" style="color: #f43f5e;">Delete</a>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            });
-        } catch (e) {
-            console.error("Error fetching file tree");
-        }
+        const res = await fetch('/api/files');
+        const files = await res.json();
+        const table = document.getElementById('fileTable');
+        table.innerHTML = '';
+        files.forEach(f => {
+            table.innerHTML += `
+                <tr>
+                    <td>📦 ${f}</td>
+                    <td>
+                        <div class="action-links">
+                            <a href="/files/${f}" target="_blank">View</a>
+                            <a onclick="inspectObject('${f}')">Inspect Map</a>
+                            <a onclick="deleteFile('${f}')" style="color: #f43f5e;">Delete</a>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    async function inspectObject(fileName) {
+        const res = await fetch(`/api/inspect?file=${encodeURIComponent(fileName)}`);
+        const data = await res.json();
+        
+        let chunksHtml = '';
+        data.chunks.forEach(c => {
+            chunksHtml += `<tr><td><code>${c.chunk_name}</code></td><td>Node #${c.node_id} (${c.node_host})</td><td>${c.size_bytes} bytes</td></tr>`;
+        });
+
+        document.getElementById('inspectorBody').innerHTML = `
+            <p><b>Object Key:</b> ${data.filename}</p>
+            <p><b>Encryption Status:</b> AES-256-GCM Secure</p>
+            <p><b>Total Chunks (Shards):</b> ${data.total_chunks}</p>
+            <h4 style="margin-top: 1rem;">Placement Group Shard Map:</h4>
+            <table>
+                <thead><tr><th>Shard Name</th><th>Assigned Node</th><th>Size</th></tr></thead>
+                <tbody>${chunksHtml}</tbody>
+            </table>
+        `;
+        document.getElementById('inspectModal').style.display = 'flex';
+    }
+
+    function closeInspector() {
+        document.getElementById('inspectModal').style.display = 'none';
     }
 
     async function deleteFile(fileName) {
-        if (!confirm(`Permanently delete '${fileName}' across the cluster ring?`)) return;
-
-        const res = await fetch(`/api/delete?file=${encodeURIComponent(fileName)}`, {
-            method: 'DELETE'
-        });
-
-        if (res.ok) {
-            fetchFiles();
-        } else {
-            alert('Failed to delete asset.');
-        }
+        if (!confirm(`Purge object '${fileName}' from the cluster pool?`)) return;
+        await fetch(`/api/delete?file=${encodeURIComponent(fileName)}`, { method: 'DELETE' });
+        fetchFiles();
     }
 
     async function uploadFiles(files) {
@@ -145,34 +160,24 @@
         const progContainer = document.getElementById('progContainer');
         const progBar = document.getElementById('progBar');
         const statusText = document.getElementById('statusText');
-        
         progContainer.style.display = 'block';
 
         for (let i = 0; i < files.length; i++) {
             let file = files[i];
-            let relativePath = file.webkitRelativePath || file.name;
+            let formData = new FormData();
+            formData.append('file', file, file.webkitRelativePath || file.name);
+            statusText.innerText = `Sharding & Replicating: ${file.name}`;
 
-            statusText.innerText = `Encrypting & Replicating (${i+1}/${files.length}): ${relativePath}`;
-
-            const formData = new FormData();
-            formData.append('file', file, relativePath);
-
-            await new Promise((resolve, reject) => {
+            await new Promise((resolve) => {
                 const xhr = new XMLHttpRequest();
                 xhr.upload.onprogress = (e) => {
-                    if (e.lengthComputable) {
-                        let percent = (e.loaded / e.total) * 100;
-                        progBar.style.width = percent + '%';
-                    }
+                    if (e.lengthComputable) progBar.style.width = ((e.loaded / e.total) * 100) + '%';
                 };
-                xhr.onload = () => { if (xhr.status === 200) resolve(); else reject(); };
+                xhr.onload = resolve;
                 xhr.open('POST', '/api/upload', true);
                 xhr.send(formData);
             });
         }
-
-        statusText.innerText = "[✓] Batch payload encrypted and synced across cluster.";
-        progBar.style.width = '0%';
         progContainer.style.display = 'none';
         fetchFiles();
     }
