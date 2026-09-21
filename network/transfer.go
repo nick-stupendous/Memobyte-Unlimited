@@ -23,11 +23,9 @@ type ClusterConfig struct {
 	Nodes []StorageNode `json:"cluster_nodes"`
 }
 
-// Loads cluster topology to determine where data shards live
 func getClusterNodes() []StorageNode {
 	file, err := os.Open("management/nodes.json")
 	if err != nil {
-		// Fallback to single local node if cluster map isn't found yet
 		return []StorageNode{{ID: 0, Host: "localhost:8080", Status: "active"}}
 	}
 	defer file.Close()
@@ -37,11 +35,35 @@ func getClusterNodes() []StorageNode {
 	return config.Nodes
 }
 
-// Deterministic hashing function (CRUSH-inspired placement logic)
 func hashString(s string) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(s))
 	return h.Sum32()
+}
+
+// Automatically syncs and replicates chunks across multiple cluster nodes concurrently
+func replicateChunkToCluster(chunkName string, data []byte, nodes []StorageNode) {
+	replicationCount := 2 // Keep 2 copies for fault tolerance
+	if len(nodes) < replicationCount {
+		replicationCount = len(nodes)
+	}
+
+	primaryIndex := int(hashString(chunkName)) % len(nodes)
+
+	for i := 0; i < replicationCount; i++ {
+		nodeIndex := (primaryIndex + i) % len(nodes)
+		targetNode := nodes[nodeIndex]
+
+		go func(node StorageNode) {
+			if node.Host == "localhost:8080" || node.Host == "127.0.0.1:8080" {
+				os.MkdirAll(uploadPath, os.ModePerm)
+				os.WriteFile(filepath.Join(uploadPath, chunkName), data, 0644)
+			} else {
+				forwardURL := fmt.Sprintf("http://%s/api/receive-chunk?name=%s", node.Host, chunkName)
+				http.Post(forwardURL, "application/octet-stream", bytes.NewReader(data))
+			}
+		}(targetNode)
+	}
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -50,8 +72,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse multipart form with a 32MB RAM buffer limit
-	err := r.ParseMultipartForm(32 << 20)
+	err := r.ParseMultipartForm(32 << 20) // 32MB RAM buffer limit
 	if err != nil {
 		http.Error(w, "File payload exceeds RAM buffer limit", http.StatusBadRequest)
 		return
@@ -68,26 +89,11 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	chunkIndex := 0
 	buffer := make([]byte, 1024*1024) // 1MB RAM sliding window chunker
 
-	// Stream file entirely in-memory, slicing and routing chunks on the fly
 	for {
 		n, readErr := file.Read(buffer)
 		if n > 0 {
 			chunkName := fmt.Sprintf("%s_chunk_%d", handler.Filename, chunkIndex)
-			
-			// Mathematically route chunk to a target cluster node
-			targetNodeIndex := int(hashString(chunkName)) % len(nodes)
-			targetNode := nodes[targetNodeIndex]
-
-			if targetNode.Host == "localhost:8080" || targetNode.Host == "127.0.0.1:8080" {
-				// Local storage pool write
-				os.MkdirAll(uploadPath, os.ModePerm)
-				os.WriteFile(filepath.Join(uploadPath, chunkName), buffer[:n], 0644)
-			} else {
-				// Forward chunk over network to remote cluster node via HTTP POST
-				forwardURL := fmt.Sprintf("http://%s/api/receive-chunk?name=%s", targetNode.Host, chunkName)
-				http.Post(forwardURL, "application/octet-stream", bytes.NewReader(buffer[:n]))
-			}
-
+			replicateChunkToCluster(chunkName, buffer[:n], nodes)
 			chunkIndex++
 		}
 		if readErr != nil {
@@ -99,7 +105,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"status": "success", "chunks_routed": %d, "filename": "%s"}`, chunkIndex, handler.Filename)
 }
 
-// Endpoint for receiving forwarded chunks from other cluster nodes
 func receiveChunkHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -121,7 +126,7 @@ func receiveChunkHandler(w http.ResponseWriter, r *http.Request) {
 
 	os.WriteFile(filepath.Join(uploadPath, chunkName), data, 0644)
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status": "chunk_acknowledged"}`)
+	fmt.Fprintf(w, `{"status": "chunk_replicated"}`)
 }
 
 func listFilesHandler(w http.ResponseWriter, r *http.Request) {
@@ -145,6 +150,12 @@ func listFilesHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(fileList)
 }
 
+func clusterHealthHandler(w http.ResponseWriter, r *http.Request) {
+	nodes := getClusterNodes()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(nodes)
+}
+
 func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 	filePath := r.URL.Path[len("/files/"):]
 	targetFile := filepath.Join(uploadPath, filePath)
@@ -163,6 +174,7 @@ func main() {
 	http.HandleFunc("/api/upload", uploadHandler)
 	http.HandleFunc("/api/receive-chunk", receiveChunkHandler)
 	http.HandleFunc("/api/files", listFilesHandler)
+	http.HandleFunc("/api/health", clusterHealthHandler)
 	http.HandleFunc("/files/", fileDownloadHandler)
 	
 	fs := http.FileServer(http.Dir("./ui"))
