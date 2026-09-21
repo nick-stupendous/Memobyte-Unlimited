@@ -296,8 +296,18 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Numerical sorting fix so it handles infinite chunks cleanly
 	sort.Slice(chunkFiles, func(i, j int) bool {
-		return chunkFiles[i] < chunkFiles[j]
+		var id1, id2 int
+		partsI := strings.Split(chunkFiles[i], "_chunk_")
+		partsJ := strings.Split(chunkFiles[j], "_chunk_")
+		if len(partsI) > 1 {
+			fmt.Sscanf(partsI[1], "%d", &id1)
+		}
+		if len(partsJ) > 1 {
+			fmt.Sscanf(partsJ[1], "%d", &id2)
+		}
+		return id1 < id2
 	})
 
 	var fullFileBytes []byte
