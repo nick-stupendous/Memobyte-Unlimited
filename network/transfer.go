@@ -30,6 +30,20 @@ type ClusterConfig struct {
 	Nodes []StorageNode `json:"cluster_nodes"`
 }
 
+type ChunkInfo struct {
+	ChunkName string `json:"chunk_name"`
+	NodeID    int    `json:"node_id"`
+	NodeHost  string `json:"node_host"`
+	SizeBytes int64  `json:"size_bytes"`
+}
+
+type ObjectInspector struct {
+	Filename    string      `json:"filename"`
+	TotalChunks int         `json:"total_chunks"`
+	Encrypted   bool        `json:"encrypted"`
+	Chunks      []ChunkInfo `json:"chunks"`
+}
+
 func getClusterNodes() []StorageNode {
 	file, err := os.Open("management/nodes.json")
 	if err != nil {
@@ -215,6 +229,51 @@ func clusterHealthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(nodes)
 }
 
+func inspectHandler(w http.ResponseWriter, r *http.Request) {
+	fileName := r.URL.Query().Get("file")
+	if fileName == "" {
+		http.Error(w, "Missing file identifier", http.StatusBadRequest)
+		return
+	}
+
+	nodes := getClusterNodes()
+	files, err := os.ReadDir(uploadPath)
+	if err != nil {
+		http.Error(w, "Storage pool error", http.StatusInternalServerError)
+		return
+	}
+
+	var chunkInfos []ChunkInfo
+	prefix := fileName + "_chunk_"
+
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), prefix) {
+			info, _ := f.Info()
+			chunkName := f.Name()
+			
+			primaryIndex := int(hashString(chunkName)) % len(nodes)
+			targetNode := nodes[primaryIndex]
+
+			chunkInfos = append(chunkInfos, ChunkInfo{
+				ChunkName: chunkName,
+				NodeID:    targetNode.ID,
+				NodeHost:  targetNode.Host,
+				SizeBytes: info.Size(),
+			})
+		}
+	}
+
+	inspectorData := ObjectInspector{
+		Filename:    fileName,
+		TotalChunks: len(chunkInfos),
+		Encrypted:   true,
+		Chunks:      chunkInfos,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(inspectorData)
+}
+
 func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 	fileName := r.URL.Path[len("/files/"):]
 	
@@ -241,8 +300,6 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return chunkFiles[i] < chunkFiles[j]
 	})
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fileName))
-
 	for _, chunk := range chunkFiles {
 		chunkPath := filepath.Join(uploadPath, chunk)
 		data, err := os.ReadFile(chunkPath)
@@ -267,6 +324,7 @@ func main() {
 	http.HandleFunc("/api/delete", deleteHandler)
 	http.HandleFunc("/api/files", listFilesHandler)
 	http.HandleFunc("/api/health", clusterHealthHandler)
+	http.HandleFunc("/api/inspect", inspectHandler)
 	http.HandleFunc("/files/", fileDownloadHandler)
 	
 	fs := http.FileServer(http.Dir("./ui"))
