@@ -317,6 +317,23 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Explicitly set correct audio/video MIME types so browsers handle range streaming properly
+	ext := strings.ToLower(filepath.Ext(fileName))
+	switch ext {
+	case ".flac":
+		w.Header().Set("Content-Type", "audio/flac")
+	case ".mp3":
+		w.Header().Set("Content-Type", "audio/mpeg")
+	case ".wav":
+		w.Header().Set("Content-Type", "audio/wav")
+	case ".ogg":
+		w.Header().Set("Content-Type", "audio/ogg")
+	case ".mp4":
+		w.Header().Set("Content-Type", "video/mp4")
+	case ".webm":
+		w.Header().Set("Content-Type", "video/webm")
+	}
+
 	reader := bytes.NewReader(fullFileBytes)
 	http.ServeContent(w, r, fileName, time.Time{}, reader)
 }
@@ -335,6 +352,6 @@ func main() {
 	fs := http.FileServer(http.Dir("./ui"))
 	http.Handle("/", fs)
 
-	fmt.Printf("[*] Memobyte Secure Distributed Exabyte Node active on network port 8080\n")
+	fmt.Printf("[*] Memobyte Secure Distributed Exabyte Node active on http://0.0.0.0:8080 (e.g http://your-own-ip:8080)\n")
 	http.ListenAndServe(port, nil)
 }
