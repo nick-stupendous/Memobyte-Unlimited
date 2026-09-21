@@ -324,7 +324,7 @@ func fileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	port := ":8080"
+	port := "0.0.0.0:8080" // Bound to all interfaces for local network access
 
 	http.HandleFunc("/api/upload", uploadHandler)
 	http.HandleFunc("/api/receive-chunk", receiveChunkHandler)
@@ -337,6 +337,6 @@ func main() {
 	fs := http.FileServer(http.Dir("./ui"))
 	http.Handle("/", fs)
 
-	fmt.Printf("[*] Memobyte Secure Distributed Exabyte Node active on http://localhost%s\n", port)
+	fmt.Printf("[*] Memobyte Secure Distributed Exabyte Node active on network port 8080\n")
 	http.ListenAndServe(port, nil)
 }
