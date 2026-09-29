@@ -5,7 +5,7 @@ First to start...
 
 # Git cloning process:
 
-git clone http://github.com/nick-stupendous/Memobyte-Unlimited/
+git clone https://github.com/nick-stupendous/Memobyte-Unlimited.git
 
 # To start initializing the go module:
 
