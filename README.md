@@ -5,7 +5,7 @@ First to start...
 
 # Git cloning process:
 
-git clone http://github.com/nick-stupendous/Memobyte-Unlimited/edit/main/README.md
+git clone http://github.com/nick-stupendous/Memobyte-Unlimited/
 
 # To start initializing the go module:
 
